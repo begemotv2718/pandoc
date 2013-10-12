@@ -39,7 +39,7 @@ import Text.Printf ( printf )
 import Network.URI ( isAbsoluteURI, unEscapeString )
 import Data.List ( (\\), isSuffixOf, isInfixOf,
                    isPrefixOf, intercalate, intersperse )
-import Data.Char ( toLower, isPunctuation )
+import Data.Char ( toLower, isPunctuation, isAscii, isLetter, isDigit, ord )
 import Control.Applicative ((<|>))
 import Control.Monad.State
 import Text.Pandoc.Pretty
@@ -220,7 +220,16 @@ stringToLaTeX  ctx (x:xs) = do
        '\x201D' | ligatures -> "''" ++ rest
        '\x2014' | ligatures -> "---" ++ rest
        '\x2013' | ligatures -> "--" ++ rest
-       _        -> x : rest
+       _ -> x : rest
+
+labelSafeEncode :: String -> String
+labelSafeEncode [] = []
+labelSafeEncode (x:xs) 
+                 | (isLetter x || isDigit x) && isAscii x = x:labelSafeEncode xs
+                 | elem x "-+=:;." = x: labelSafeEncode xs
+                 | otherwise = "ux" ++ printf "%x" (ord x) ++ labelSafeEncode xs
+
+
 
 -- | Puts contents into LaTeX command.
 inCmd :: String -> Doc -> Doc
@@ -532,7 +541,7 @@ sectionHeader unnumbered ref level lst = do
   let headerWith x y r = refLabel $ text x <> y <>
                              if null r
                                 then empty
-                                else text "\\label" <> braces (text r)
+                                else text "\\label" <> braces (text $ labelSafeEncode r)
   let sectionType = case level' of
                           0  | writerBeamer opts -> "part"
                              | otherwise -> "chapter"
@@ -653,7 +662,7 @@ inlineToLaTeX Space = return space
 inlineToLaTeX (Link txt ('#':ident, _)) = do
   contents <- inlineListToLaTeX txt
   ident' <- stringToLaTeX URLString ident
-  return $ text "\\hyperref" <> brackets (text ident') <> braces contents
+  return $ text "\\hyperref" <> brackets (text $ labelSafeEncode ident') <> braces contents
 inlineToLaTeX (Link txt (src, _)) =
   case txt of
         [Str x] | x == src ->  -- autolink
